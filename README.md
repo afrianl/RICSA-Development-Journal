@@ -1,4 +1,5 @@
-[[2026-04-06]]
+# RICSA Development Journal
+## 2026-04-06
 - Found the API to render citation page images
 - Created a presentation to be presented to Mas Ivo
 	- Development progress
