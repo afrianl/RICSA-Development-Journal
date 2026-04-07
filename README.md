@@ -12,3 +12,7 @@
 	- Update Document
 	- Delete Document
 	- Get Page Image
+
+## 2026-04-07
+- Starts research on Google Drive file syncing w/ RAGFlow
+- 
