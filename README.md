@@ -15,4 +15,8 @@
 
 ## 2026-04-07
 - Starts research on Google Drive file syncing w/ RAGFlow
+- File syncing problem found:
+	- Files won't start parsing
+	- Files WILL start parsing, just after every 7 hours or so
+	- One solution is to check the logs in the machine running RAGFlow
 - 
