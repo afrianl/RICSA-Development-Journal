@@ -25,3 +25,4 @@
 	- File sync only takes newly modified files on the drive which was/were created between the last sync and the current sync
 	- The file sync works wonderfully on local machine, yet only syncs once every 7 hours on the dev server. Might be an env-related issue
 - Working on the fix for the aforementioned issues
+- Start writing NODIN to SKAI for LHA samples for testing purposes
