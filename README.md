@@ -30,3 +30,6 @@
 ## 2026-04-09
 - Researched LLMs to see which one is best. Current candidate:
 	- Gemma 4, refer to [the Gemma 4 document](Gemma_4.md)
+- Google Drive file sync has been fixed
+- Found out RAGFlow's Dataset Separation does not do anything in creating RBAC
+- Found a workaround for the RBAC by using the `/api/v1/retrieval` endpoint instead (actually goated tho idk why i didn't use this one)
