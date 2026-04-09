@@ -29,4 +29,4 @@
 
 ## 2026-04-09
 - Researched LLMs to see which one is best. Current candidate:
-	- Gemma 4, refer to [[Personal/LLMs/Gemma 4|the Gemma 4 document]]
+	- Gemma 4, refer to [[./Gemma 4|the Gemma 4 document]]
