@@ -40,3 +40,6 @@
 - GCS file sync succeeds, but has yet to be able to process any bigger PDFs, timeout is the most probable cause 
 - Added more timeout duration to handle larger files
 - Timeout duration increment gives no avail
+
+## 2026-04-13
+- Found the root problem of larger files not processable, caused by nginx data transfer limiting
