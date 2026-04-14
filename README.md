@@ -43,3 +43,13 @@
 
 ## 2026-04-13
 - Found the root problem of larger files not processable, caused by nginx data transfer limiting
+- Built a small and temporary web app to test out:
+	- RBAC
+	- Session management
+- Concluded that the best workaround to cover both points is to create two distinct chat assistants, one for each clearance level (secret and generic)
+- Nevermind, that's stupid because RAGFlow has an issue with chat assistant ownership (whoops)
+- Tried out using one singular api key as the entry point and let ragflow manage the user id and session ids
+
+## 2026-04-14
+- GCS file upload problem is now solved by reversing the file storage process.
+	- Instead of pushing the raw PDF into GCS then processing the files in the GCS into RAGFlow, we push the files into RAGFlow then let RAGFlow forward it into GCS (insane trick thx mas dafa)
