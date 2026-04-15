@@ -53,3 +53,7 @@
 ## 2026-04-14
 - GCS file upload problem is now solved by reversing the file storage process.
 	- Instead of pushing the raw PDF into GCS then processing the files in the GCS into RAGFlow, we push the files into RAGFlow then let RAGFlow forward it into GCS (insane trick thx mas dafa)
+
+## 2026-04-15
+- Added file upload API into the temporary web app to test the implementation
+- Held a meeting with ASA to double check the API structure
