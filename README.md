@@ -57,3 +57,7 @@
 ## 2026-04-15
 - Added file upload API into the temporary web app to test the implementation
 - Held a meeting with ASA to double check the API structure
+
+## 2026-04-16
+- Updated the example API structure to follow ASA's ERD structure
+- Created [the API REFERENCE document](API_REFERENCE.md) as a documentation/reference for ASA to use
