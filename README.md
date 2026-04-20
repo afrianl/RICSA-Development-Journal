@@ -61,3 +61,9 @@
 ## 2026-04-16
 - Updated the example API structure to follow ASA's ERD structure
 - Created [the API REFERENCE document](API_REFERENCE.md) as a documentation/reference for ASA to use
+
+## 2026-04-17
+- sick leave
+
+## 2026-04-20
+-
