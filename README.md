@@ -66,4 +66,5 @@
 - sick leave
 
 ## 2026-04-20
--
+- Added the Flow Diagram to the API_REFERENCE document to better visualize the data flow and the APIs used
+- 

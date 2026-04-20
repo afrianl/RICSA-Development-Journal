@@ -15,7 +15,89 @@ DATABASE_URL="file:./dev.db" RAGFLOW_BASE_URL="https://ragflow.dev.internal.raya
 ```
 
 ---
+## Flow Diagram
+Four layers, left to right: **frontend pages** → **internal Next.js routes** → **Prisma models** and **RAGFlow external endpoints**. Edge direction follows the request path.
 
+```mermaid
+flowchart LR
+  %% === Frontend pages ===
+  home["/ (chat)"]:::page
+  admin["/admin"]:::page
+  docs["/documents"]:::page
+
+  %% === Internal API routes ===
+  keys_r["/api/keys<br/>GET · POST · DELETE"]:::internal
+  conf_r["/api/confidentiality<br/>GET"]:::internal
+  cat_r["/api/categories<br/>GET"]:::internal
+  dsc_r["/api/datasets<br/>GET"]:::internal
+  upl_r["/api/datasets/[datasetId]/documents<br/>POST"]:::internal
+  sess_r["/api/sessions<br/>GET · POST · DELETE"]:::internal
+  comp_r["/api/completions<br/>POST"]:::internal
+  img_r["/api/image/[imageId]<br/>GET"]:::internal
+  dbg_r["/api/debug<br/>GET"]:::internal
+
+  %% === Prisma models (SQLite) ===
+  u_m[(User)]:::db
+  c_m[(Confidentiality)]:::db
+  cat_m[(DocumentCategory)]:::db
+  b_m[(DocumentBatch)]:::db
+  d_m[(Document)]:::db
+  wfs_m[(DocumentBatch_AWFS)]:::db
+  col_m[(DocumentBatchCollaborator)]:::db
+
+  %% === RAGFlow external endpoints ===
+  rf_chats{{"GET /api/v1/chats"}}:::external
+  rf_sess{{"/api/v1/chats/{chatId}/sessions<br/>GET · POST · DELETE"}}:::external
+  rf_comp{{"POST /api/v1/chats/{chatId}/completions"}}:::external
+  rf_docs{{"/api/v1/datasets/{dsId}/documents<br/>POST · GET"}}:::external
+  rf_meta{{"PUT /api/v1/datasets/{dsId}/documents/{docId}"}}:::external
+  rf_img{{"GET /v1/document/image/{imageId}"}}:::external
+
+  %% Frontend → Internal
+  home --> keys_r
+  home --> sess_r
+  home --> comp_r
+  home --> img_r
+  admin --> keys_r
+  docs --> keys_r
+  docs --> dsc_r
+  docs --> conf_r
+  docs --> cat_r
+  docs --> upl_r
+
+  %% Internal → DB
+  keys_r --> u_m
+  conf_r --> c_m
+  cat_r --> cat_m
+  sess_r --> u_m
+  comp_r --> u_m
+  upl_r --> u_m
+  upl_r --> c_m
+  upl_r --> cat_m
+  upl_r --> b_m
+  upl_r --> d_m
+  upl_r --> wfs_m
+  upl_r --> col_m
+
+  %% Internal → RAGFlow
+  sess_r --> rf_sess
+  comp_r --> rf_comp
+  upl_r --> rf_docs
+  upl_r --> rf_meta
+  img_r --> rf_img
+  dbg_r --> rf_chats
+  dbg_r --> rf_sess
+  dbg_r --> rf_docs
+
+  classDef page fill:#e0f2fe,stroke:#0284c7,color:#0c4a6e;
+  classDef internal fill:#fef3c7,stroke:#d97706,color:#78350f;
+  classDef db fill:#dcfce7,stroke:#16a34a,color:#14532d;
+  classDef external fill:#fce7f3,stroke:#be185d,color:#831843;
+```
+
+**Legend:** blue = frontend page, amber = internal `/api/*` route, green = Prisma model, pink = RAGFlow external endpoint.
+
+---
 ## Constants
 
 | Constant       | File                                                                                                                 | Source                                 | Description                                                              |
