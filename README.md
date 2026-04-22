@@ -62,9 +62,9 @@
 - Updated the example API structure to follow ASA's ERD structure
 - Created [the API REFERENCE document](API_REFERENCE.md) as a documentation/reference for ASA to use
 
-## 2026-04-17
-- sick leave
-
 ## 2026-04-20
 - Added the Flow Diagram to the API_REFERENCE document to better visualize the data flow and the APIs used
-- 
+
+## 2026-04-22
+- Created [a BRS-based Progress Tracker](BRS_PROGRESS.md) document
+- Created a better-structured to-do list
