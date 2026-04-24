@@ -73,70 +73,43 @@
 - Completed all required endpoints in another codebase
 - Created a Swagger API Docs to test the APIs
 - Tested:
-	- `/api/ai/health` -> success
+	- GET `/api/ai/health` -> success
 		- Ragflow healthcheck 
-	- `/api/ai/ingest` -> success
+	- POST `/api/ai/ingest` -> success
 		- Creates a new document_batch in DRAFT state, by maker
-	- `/api/documents/{batch_id}/submit`
+	- POST `/api/documents/{batch_id}/submit` -> success
 		- Submits the document_batch for review,  by maker
-	- `/api/documents/{batch_id}/check`
+	- POST `/api/documents/{batch_id}/check` -> success
 		- Checks the document_batch, by checker
-	- `/api/documents/{batch_id}/sign`
+	- POST `/api/documents/{batch_id}/sign` -> success
 		- Approves the document_batch, by signer, uploads to RAGFlow
 		- also autoparses on ragflow now btw ayyyy
-	- `/api/sessions`
+	- GET `/api/sessions` -> success
 		- Lists all the sessions in the chat assistant
 		- Drops the chat history too
-		- E.g.,
-```json
+		- E.g., 
+			```json
 [
   {
-    "id": "177c4c64394e11f197ce2bd595e42f2e",
-    "name": "New Session",
-    "created_at": "2026-04-16T04:38:18.945000Z",
-    "updated_at": "2026-04-16T04:38:23.071000Z"
+	"id": "177c4c64394e11f197ce2bd595e42f2e",
+	"name": "Session 1",
+	"created_at": "2026-04-16T04:38:18.945000Z",
+	"updated_at": "2026-04-16T04:38:23.071000Z"
   },
   {
-    "id": "e3aaf87c394d11f197ce2bd595e42f2e",
-    "name": "New Session",
-    "created_at": "2026-04-16T04:36:52.009000Z",
-    "updated_at": "2026-04-16T04:36:56.661000Z"
-  },
-  {
-    "id": "c4aa35be394d11f197ce2bd595e42f2e",
-    "name": "New Session",
-    "created_at": "2026-04-16T04:35:59.995000Z",
-    "updated_at": "2026-04-16T04:36:30.440000Z"
-  },
-  {
-    "id": "c49cd70e394b11f197ce2bd595e42f2e",
-    "name": "New Session",
-    "created_at": "2026-04-16T04:21:40.913000Z",
-    "updated_at": "2026-04-16T04:21:44.698000Z"
-  },
-  {
-    "id": "b826624c394b11f197ce2bd595e42f2e",
-    "name": "New Session",
-    "created_at": "2026-04-16T04:21:20.005000Z",
-    "updated_at": "2026-04-16T04:21:37.143000Z"
-  },
-  {
-    "id": "e8ae7318394211f197ce2bd595e42f2e",
-    "name": "New Session",
-    "created_at": "2026-04-16T03:18:15.956000Z",
-    "updated_at": "2026-04-16T03:18:23.978000Z"
-  },
-  {
-    "id": "b983ecc6394211f197ce2bd595e42f2e",
-    "name": "New Session",
-    "created_at": "2026-04-16T03:16:56.825000Z",
-    "updated_at": "2026-04-16T03:17:00.067000Z"
-  },
-  {
-    "id": "b3858794394211f197ce2bd595e42f2e",
-    "name": "New Session",
-    "created_at": "2026-04-16T03:16:46.769000Z",
-    "updated_at": "2026-04-16T03:16:50.976000Z"
+	"id": "e3aaf87c394d11f197ce2bd595e42f2e",
+	"name": "New Session",
+	"created_at": "2026-04-16T04:36:52.009000Z",
+	"updated_at": "2026-04-16T04:36:56.661000Z"
   }
 ]
-```
+			```
+	- GET `/api/ai/logs`
+		- Lists audit_log entries
+
+## 2026-04-24
+- Tested:
+	- DELETE `/api/ai/ingest/{batch_id}` -> successful
+		- Deletes batch from RAGFlow
+	- POST `/api/ai/ingest` with multiple files -> bugged
+		- fixed it
