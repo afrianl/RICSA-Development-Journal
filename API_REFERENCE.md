@@ -1,209 +1,209 @@
-# RICSA API Integration Test — Reference
+# RICSA API Integration Reference
 
 ## Environment Variables
 
-| Variable | Description |
-|---|---|
-| `DATABASE_URL` | Prisma datasource URL. Default: `file:./dev.db` (SQLite) |
-| `RAGFLOW_BASE_URL` | Base URL of the RAGFlow server |
-| `RAGFLOW_API_KEY` | Bearer token for authenticating with the RAGFlow API |
-| `RAGFLOW_CHAT_ID` | RAGFlow chat assistant ID used for sessions and completions |
-| `RAGFLOW_DATASET_ID` | Default RAGFlow dataset ID; served to the upload page via `GET /api/datasets` |
+| Variable | Default | Description |
+|---|---|---|
+| `DATABASE_URL` | `sqlite:///./data/dev.db` | SQLAlchemy datasource URL. Swap to `postgresql+psycopg://user:pass@host/db` for production |
+| `RAGFLOW_BASE_URL` | `https://ragflow.internal.bankraya.co.id` | Base URL of the RAGFlow server |
+| `RAGFLOW_API_KEY` | `change-me` | Bearer token for authenticating with the RAGFlow API |
+| `RAGFLOW_CHAT_ID` | `change-me` | RAGFlow chat assistant ID used for sessions and completions |
+| `RAGFLOW_DATASET_ID` | `change-me` | RAGFlow dataset ID used for document uploads |
+| `LOG_LEVEL` | `INFO` | Logging verbosity (`DEBUG`, `INFO`, `WARNING`, `ERROR`) |
+
 `.env` example:
 ```
-DATABASE_URL="file:./dev.db" RAGFLOW_BASE_URL="https://ragflow.dev.internal.rayain.net" RAGFLOW_API_KEY="ragflow-hUf_W0uGPKOs4DIDKF9sMIKC1Gpi8Y6mohAokw84oa0" RAGFLOW_CHAT_ID="a9c38a7c394111f197ce2bd595e42f2e" RAGFLOW_DATASET_ID="45756a0c393e11f197ce2bd595e42f2e"
+DATABASE_URL="sqlite:///./data/dev.db"
+RAGFLOW_BASE_URL="https://ragflow.internal.bankraya.co.id"
+RAGFLOW_API_KEY="ragflow-xxxxxxxxxxxxxxxx"
+RAGFLOW_CHAT_ID="a9c38a7c394111f197ce2bd595e42f2e"
+RAGFLOW_DATASET_ID="45756a0c393e11f197ce2bd595e42f2e"
+LOG_LEVEL="INFO"
 ```
 
 ---
-## Flow Diagram
-Four layers, left to right: **frontend pages** → **internal Next.js routes** → **Prisma models** and **RAGFlow external endpoints**. Edge direction follows the request path.
 
-```mermaid
-flowchart LR
-  %% === Frontend pages ===
-  home["/ (chat)"]:::page
-  admin["/admin"]:::page
-  docs["/documents"]:::page
+## Constants & Enums
 
-  %% === Internal API routes ===
-  keys_r["/api/keys<br/>GET · POST · DELETE"]:::internal
-  conf_r["/api/confidentiality<br/>GET"]:::internal
-  cat_r["/api/categories<br/>GET"]:::internal
-  dsc_r["/api/datasets<br/>GET"]:::internal
-  upl_r["/api/datasets/[datasetId]/documents<br/>POST"]:::internal
-  sess_r["/api/sessions<br/>GET · POST · DELETE"]:::internal
-  comp_r["/api/completions<br/>POST"]:::internal
-  img_r["/api/image/[imageId]<br/>GET"]:::internal
-  dbg_r["/api/debug<br/>GET"]:::internal
+### Role Codes (5 total)
 
-  %% === Prisma models (SQLite) ===
-  u_m[(User)]:::db
-  c_m[(Confidentiality)]:::db
-  cat_m[(DocumentCategory)]:::db
-  b_m[(DocumentBatch)]:::db
-  d_m[(Document)]:::db
-  wfs_m[(DocumentBatch_AWFS)]:::db
-  col_m[(DocumentBatchCollaborator)]:::db
+Defined in `app/enums.py`. Every authenticated request carries one role via the `x-personal-number` → `User.role` lookup.
 
-  %% === RAGFlow external endpoints ===
-  rf_chats{{"GET /api/v1/chats"}}:::external
-  rf_sess{{"/api/v1/chats/{chatId}/sessions<br/>GET · POST · DELETE"}}:::external
-  rf_comp{{"POST /api/v1/chats/{chatId}/completions"}}:::external
-  rf_docs{{"/api/v1/datasets/{dsId}/documents<br/>POST · GET"}}:::external
-  rf_meta{{"PUT /api/v1/datasets/{dsId}/documents/{docId}"}}:::external
-  rf_img{{"GET /v1/document/image/{imageId}"}}:::external
+| Code | Name | Description |
+|---|---|---|
+| `R-IA` | IA User | Read-only: can chat and view their own sessions |
+| `R-MK` | Maker | Upload documents, replace files, submit batches |
+| `R-CK` | Checker | Review and check submitted batches; can reject |
+| `R-SG` | Signer | Approve checked batches (triggers RAGFlow push); can reject |
+| `R-AD` | Access Admin | Full access: manage users, view audit logs, delete from RAGFlow, manage access metadata |
 
-  %% Frontend → Internal
-  home --> keys_r
-  home --> sess_r
-  home --> comp_r
-  home --> img_r
-  admin --> keys_r
-  docs --> keys_r
-  docs --> dsc_r
-  docs --> conf_r
-  docs --> cat_r
-  docs --> upl_r
+### Workflow Status Codes
 
-  %% Internal → DB
-  keys_r --> u_m
-  conf_r --> c_m
-  cat_r --> cat_m
-  sess_r --> u_m
-  comp_r --> u_m
-  upl_r --> u_m
-  upl_r --> c_m
-  upl_r --> cat_m
-  upl_r --> b_m
-  upl_r --> d_m
-  upl_r --> wfs_m
-  upl_r --> col_m
+| Code | Meaning |
+|---|---|
+| `DRAFT` | Batch created by Maker; files stored locally, not yet in RAGFlow |
+| `SUBMITTED` | Maker submitted for review; awaiting Checker |
+| `CHECKED` | Checker reviewed; awaiting Signer |
+| `APPROVED` | Signer approved; documents queued/pushed to RAGFlow |
+| `REJECTED` | Rejected by Checker (from SUBMITTED) or Signer (from CHECKED) |
 
-  %% Internal → RAGFlow
-  sess_r --> rf_sess
-  comp_r --> rf_comp
-  upl_r --> rf_docs
-  upl_r --> rf_meta
-  img_r --> rf_img
-  dbg_r --> rf_chats
-  dbg_r --> rf_sess
-  dbg_r --> rf_docs
+**Valid state machine transitions:**
 
-  classDef page fill:#e0f2fe,stroke:#0284c7,color:#0c4a6e;
-  classDef internal fill:#fef3c7,stroke:#d97706,color:#78350f;
-  classDef db fill:#dcfce7,stroke:#16a34a,color:#14532d;
-  classDef external fill:#fce7f3,stroke:#be185d,color:#831843;
+```
+DRAFT → SUBMITTED    (R-MK, original maker only)
+SUBMITTED → CHECKED  (R-CK)
+SUBMITTED → REJECTED (R-CK)
+CHECKED → APPROVED   (R-SG)  ← triggers background RAGFlow push
+CHECKED → REJECTED   (R-SG)
 ```
 
-**Legend:** blue = frontend page, amber = internal `/api/*` route, green = Prisma model, pink = RAGFlow external endpoint.
+### Confidentiality Codes
+
+| Code | Name | Description |
+|---|---|---|
+| `U` | Umum | Public — accessible to all authenticated users with clearance ≥ 0 |
+| `R` | Rahasia | Restricted — requires clearance ≥ 1 AND must be a collaborator or in a matching group |
+
+### Clearance Level
+
+Boolean. Stored on each `User` record.
+
+| Value | Access |
+|---|---|
+| `false` | Umum (`U`) documents only |
+| `true` | Rahasia (`R`) documents, provided the user is also a collaborator or in an access group |
+
+`R-AD` bypasses all clearance checks and sees every document regardless of value.
 
 ---
-## Constants
 
-| Constant       | File                                                                                                                 | Source                                 | Description                                                              |
-| -------------- | -------------------------------------------------------------------------------------------------------------------- | -------------------------------------- | ------------------------------------------------------------------------ |
-| `CHAT_ID`      | `src/lib/assistants.ts`                                                                                              | `process.env.`<br>`RAGFLOW_CHAT_ID`    | Single RAGFlow chat assistant ID used by sessions and completions routes |
-| `DATASET_ID`   | `src/lib/assistants.ts`                                                                                              | `process.env.`<br>`RAGFLOW_DATASET_ID` | Default dataset ID; exposed to the frontend via `GET /api/datasets`      |
-| `RAGFLOW_BASE` | `src/app/api/`<br>`{completions,sessions,datasets/`<br>`[datasetId]/documents,image/`<br>`[imageId],debug}/route.ts` | `process.env.`<br>`RAGFLOW_BASE_URL`   | RAGFlow server base URL (module-level const per route file)              |
-| `RAGFLOW_KEY`  | Same files as `RAGFLOW_BASE`                                                                                         | `process.env.`<br>`RAGFLOW_API_KEY`    | RAGFlow API bearer token (module-level const per route file)             |
+## Database Schema
 
+SQLModel (SQLAlchemy) models defined in `app/models/`. SQLite in dev; PostgreSQL in production.
 
----
+### user
 
-## Database Schema (Udah disesuaikan sama ERD)
-
-Aligned with the RICSA ERD. External FK references (to HRD, ISDM, Jagat Raya databases) are stored as plain strings.
-
-### User (local auth simulation — not in ERD)
-
-| Column | Type | Default | Description |
+| Column | Type | Constraints | Notes |
 |---|---|---|---|
-| `id` | `String` (cuid) | auto | Primary key |
-| `name` | `String` | — | Display name |
-| `personal_number` | `String` (unique) | — | Maps to `personal_number` in `document_batch_collaborator`; references employee table in external ISDM database |
-| `role` | `String` | `"user"` | `"user"` or `"superuser"`. Superusers bypass metadata filters |
-| `created_at` | `DateTime` | `now()` | Creation timestamp |
+| `id` | `VARCHAR` | PK | Format: `UR-{ULID}` |
+| `personal_number` | `VARCHAR(16)` | UNIQUE, indexed | Employee ID; used as the `x-personal-number` header value |
+| `name` | `VARCHAR(120)` | NOT NULL | Display name |
+| `role` | `ENUM(R-IA, R-MK, R-CK, R-SG, R-AD)` | NOT NULL | Role code |
+| `has_clearance` | `BOOLEAN` | DEFAULT FALSE | `true` = can access Rahasia docs (if also collaborator/group member) |
+| `is_active` | `BOOL` | DEFAULT TRUE | Soft-delete flag; inactive users are rejected at auth |
+| `created_at` | `DATETIME` | DEFAULT NOW | UTC |
+| `updated_at` | `DATETIME` | DEFAULT NOW | UTC |
+
+**Relations:** `user_group` (many-to-many → `group`)
+
+### group
+
+| Column | Type | Constraints | Notes |
+|---|---|---|---|
+| `id` | `VARCHAR` | PK | Format: `GRP-{ULID}` |
+| `code` | `VARCHAR(32)` | UNIQUE, indexed | e.g. `SKAI`, `EDM` |
+| `name` | `VARCHAR(120)` | NOT NULL | Human-readable name |
+
+**Seeded values:** `SKAI` (Satuan Kerja Audit Internal), `EDM` (Desk EDM)
+
+### user_group (junction)
+
+| Column | Type | Constraints |
+|---|---|---|
+| `user_id` | `VARCHAR` | FK → `user.id`, PK |
+| `group_id` | `VARCHAR` | FK → `group.id`, PK |
+
+### document_category (lookup)
+
+| Column | Type | Constraints | Notes |
+|---|---|---|---|
+| `id` | `VARCHAR` | PK | Format: `CAT-{ULID}` |
+| `code` | `VARCHAR(16)` | UNIQUE, indexed | e.g. `LHA`, `KKA`, `DPA` |
+| `name` | `VARCHAR(120)` | NOT NULL | Full category name |
+
+**Seeded values:** `LHA` (Laporan Hasil Audit), `KKA` (Kertas Kerja Audit), `DPA` (Dokumen Pendukung Audit)
+
+### confidentiality (lookup)
+
+| Column | Type | Constraints | Notes |
+|---|---|---|---|
+| `id` | `VARCHAR` | PK | Format: `CONF-{ULID}` |
+| `code` | `ENUM(U, R)` | UNIQUE, indexed | Confidentiality code |
+| `name` | `VARCHAR(60)` | NOT NULL | `Umum` or `Rahasia` |
+| `clearance_required` | `INT` | DEFAULT 0 | Minimum clearance level required to view |
+
+### document_batch_application_workflow_status (lookup)
+
+| Column | Type | Constraints | Notes |
+|---|---|---|---|
+| `id` | `VARCHAR` | PK | Format: `WS-{ULID}` |
+| `code` | `ENUM(DRAFT, SUBMITTED, CHECKED, APPROVED, REJECTED)` | UNIQUE, indexed | Status code |
+| `name` | `VARCHAR(60)` | NOT NULL | Display label |
 
 ### document_batch
 
-| Column                                 | Type              | Nullable | Description                                           |
-| -------------------------------------- | ----------------- | -------- | ----------------------------------------------------- |
-| `id`                                   | `varchar(100)` PK | Not Null | Format: `DCMB-[YYYYMM]-[increment]-[version]`         |
-| `application_workflow`<br>`_status_id` | `varchar(40)`     | Not Null | References workflow status in <br>Jagat Raya database |
-| `workspace_organization_id`            | `varchar(10)`     | Not Null | References organization in HRD database               |
-| `workspace_branch_id`                  | `varchar(10)`     | Not Null | References branch in HRD <br>database                 |
-| `group_id`                             | `varchar(40)`     | Not Null | Format: `DCMB-[YYYYMM]-[increment]`                   |
-| `version`                              | `varchar(6)`      | Not Null | Increments on revision                                |
-| `title`                                | `text`            | Not Null | Batch title (e.g. "Hasil Audit CB Menara Brilian")    |
-| `note`                                 | `text`            | Null     | Rejection notes etc.                                  |
-| `action_at`                            | `timestampz`      | Not Null | Insert/update timestamp                               |
-| `action_by`                            | `varchar(40)`     | Not Null | Actor (personal_number/System<br>/Migration)          |
+| Column | Type | Constraints | Notes |
+|---|---|---|---|
+| `id` | `VARCHAR` | PK | Format: `DB-{ULID}` |
+| `title` | `VARCHAR(240)` | NOT NULL | Batch display title |
+| `category_id` | `VARCHAR` | FK → `document_category.id` | |
+| `confidentiality_id` | `VARCHAR` | FK → `confidentiality.id` | |
+| `workflow_status_id` | `VARCHAR` | FK → `document_batch_application_workflow_status.id`, indexed | Current FSM state |
+| `maker_id` | `VARCHAR` | FK → `user.id` | Original uploader |
+| `checker_id` | `VARCHAR` | FK → `user.id`, NULL | Set when batch transitions to CHECKED |
+| `signer_id` | `VARCHAR` | FK → `user.id`, NULL | Set when batch transitions to APPROVED or REJECTED from CHECKED |
+| `rejected_reason` | `VARCHAR(500)` | NULL | Populated on rejection |
+| `created_at` | `DATETIME` | DEFAULT NOW | UTC |
+| `updated_at` | `DATETIME` | DEFAULT NOW | UTC |
 
-**Relations:** `documents` (Document[]), `workflowStatuses` (DocumentBatchApplicationWorkflowStatus[])
+**Relations:** `document` (one-to-many), `document_batch_collaborator` (many-to-many → `user`), `document_group` (many-to-many → `group`)
 
 ### document
 
-| Column | Type | Nullable | Description |
+| Column | Type | Constraints | Notes |
 |---|---|---|---|
-| `id` | `varchar(100)` PK | Not Null | Format: `[document_batch_id]-[application_media_id]` |
-| `document_batch_id` | `varchar(40)` FK | Not Null | References `document_batch.id` |
-| `document_category_id` | `varchar(40)` FK | Not Null | References `document_category.id` |
-| `confidentialiy_id` | `varchar(40)` FK | Not Null | References `confidentiality.id` (typo preserved from ERD) |
-| `application_media_id` | `varchar(40)` | Not Null | References `application_media` in Jagat Raya database |
-| `action_at` | `timestampz` | Not Null | Insert/update timestamp |
-| `action_by` | `varchar(40)` | Not Null | Actor |
-| `ragflow_document_id` | `String` (unique) | Null | RAGFlow document ID (integration field, not in ERD) |
-| `ragflow_dataset_id` | `String` | Null | RAGFlow dataset ID (integration field, not in ERD) |
+| `id` | `VARCHAR` | PK | Format: `DC-{ULID}` |
+| `batch_id` | `VARCHAR` | FK → `document_batch.id` (CASCADE DELETE), indexed | Parent batch |
+| `version` | `VARCHAR(8)` | NOT NULL | e.g. `000001` — increments on file replacement |
+| `filename` | `VARCHAR(240)` | NOT NULL | Original uploaded filename |
+| `storage_path` | `VARCHAR(500)` | NOT NULL | Local disk path: `data/uploads/{batch_id}__{doc_id}__{safe_name}` |
+| `mime_type` | `VARCHAR(80)` | NOT NULL | e.g. `application/pdf` |
+| `size_bytes` | `INT` | NOT NULL | File size in bytes |
+| `ragflow_document_id` | `VARCHAR(80)` | NULL, UNIQUE | Set after the batch is APPROVED and pushed to RAGFlow |
+| `ragflow_dataset_id` | `VARCHAR(80)` | NULL | RAGFlow dataset ID (mirrors `RAGFLOW_DATASET_ID` env var) |
+| `uploaded_at` | `DATETIME` | DEFAULT NOW | UTC |
 
-**Relations:** `documentBatch` (DocumentBatch), `documentCategory` (DocumentCategory), `confidentiality` (Confidentiality)
+### document_batch_collaborator (junction)
 
-### confidentiality
+| Column | Type | Constraints |
+|---|---|---|
+| `batch_id` | `VARCHAR` | FK → `document_batch.id` (CASCADE), PK |
+| `user_id` | `VARCHAR` | FK → `user.id`, PK |
 
-| Column | Type | Nullable | Description                                         |
-| ------------- | ----------------- | -------- | --------------------------------------------------- |
-| `id` | `varchar(100)` PK | Not Null | Format: `CFDY[increment]`                           |
-| `name` | `varchar(255)` | Not Null | Short code: `U` (Umum/Public), `R` (Rahasia/Secret) |
-| `description` | `text` | Not Null | Human-readable description                          |
-| `action_at` | `timestampz` | Not Null | Insert/update timestamp                             |
-| `action_by` | `varchar(40)` | Not Null | Actor                                               |
+### document_group (junction)
 
-**Seeded values:** `CFDY000001` (U — Umum), `CFDY000002` (R — Rahasia)
+| Column | Type | Constraints |
+|---|---|---|
+| `batch_id` | `VARCHAR` | FK → `document_batch.id` (CASCADE), PK |
+| `group_id` | `VARCHAR` | FK → `group.id`, PK |
 
-### document_category
+### audit_log
 
-| Column | Type | Nullable | Description |
+| Column | Type | Constraints | Notes |
 |---|---|---|---|
-| `id` | `varchar(100)` PK | Not Null | Format: `DCM[sequence]` |
-| `name` | `varchar(255)` | Not Null | Short code: `LHA`, `KKA`, `DPA` |
-| `description` | `text` | Not Null | Full name (e.g. "Laporan Hasil Audit") |
-| `action_at` | `timestampz` | Not Null | Insert/update timestamp |
-| `action_by` | `varchar(40)` | Not Null | Actor |
-
-**Seeded values:** `DCM000001` (LHA), `DCM000002` (KKA), `DCM000003` (DPA)
-
-### document_batch_application_workflow_status
-
-| Column                                 | Type              | Nullable | Description                                                    |
-| -------------------------------------- | ----------------- | -------- | -------------------------------------------------------------- |
-| `id`                                   | `varchar(100)` PK | Not Null | Format: `[document_batch_id]-[application_workflow_status_id]` |
-| `document_batch_id`                    | `varchar(100)` FK | Not Null | References `document_batch.id`                                 |
-| `application_workflow`<br>`_status_id` | `varchar(40)`     | Not Null | References workflow status in Jagat Raya database              |
-| `action_at`                            | `timestampz`      | Not Null | Insert/update timestamp                                        |
-| `action_by`                            | `varchar(40)`     | Not Null | Actor                                                          |
-
-**Relations:** `documentBatch` (DocumentBatch), `collaborators` (DocumentBatchCollaborator[])
-
-### document_batch_collaborator
-
-| Column                                                | Type              | Nullable | Description                                                      |
-| ----------------------------------------------------- | ----------------- | -------- | ---------------------------------------------------------------- |
-| `id`                                                  | `varchar(100)` PK | Not Null | Format: `[workflow_status_id]-[personal_number]`                 |
-| `document_batch_application`<br>`_workflow_status_id` | `varchar(100)` FK | Not Null | References `document_batch_application`<br>`_workflow_status.id` |
-| `personal_number`                                     | `varchar(10)`     | Not Null | References employee in ISDM database                             |
-| `action_at`                                           | `timestampz`      | Not Null | Insert/update timestamp                                          |
-| `action_by`                                           | `varchar(40)`     | Not Null | Actor                                                            |
-
-**Relationship chain:** `document_batch_collaborator` -> `document_batch_application_workflow_status` -> `document_batch` <- `document`
+| `id` | `VARCHAR` | PK | Format: `LOG-{ULID}` |
+| `timestamp` | `DATETIME` | indexed | UTC, auto-set |
+| `user_id` | `VARCHAR` | FK → `user.id`, indexed | Actor |
+| `endpoint` | `VARCHAR(120)` | | e.g. `/api/ai/chat` |
+| `method` | `VARCHAR(10)` | | HTTP verb |
+| `session_id` | `VARCHAR(80)` | NULL | RAGFlow session ID (chat calls only) |
+| `question` | `TEXT` | NULL | User's question; `[REDACTED]` if any retrieved doc is Rahasia (FR-AI-LOG-02) |
+| `retrieved_doc_ids` | `JSON` | NULL | List of local `document.id` values from RAGFlow chunks |
+| `access_status` | `VARCHAR(20)` | | `granted` / `partial` / `no_context` / `error` |
+| `latency_ms` | `INT` | | End-to-end response time |
+| `http_status` | `INT` | | HTTP response status code |
+| `error_code` | `VARCHAR(20)` | indexed | Error code if request failed, else null |
+| `error_detail` | `TEXT` | NULL | Human-readable detail for the error |
 
 ---
 
@@ -211,194 +211,988 @@ Aligned with the RICSA ERD. External FK references (to HRD, ISDM, Jagat Raya dat
 
 ### Server-side
 
-| Function                                  | File                                                        | Description                                                                                                                       |
-| ----------------------------------------- | ----------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------- |
-| `generateIds(fileCount, collaboratorPNs)` | `src/app/api/datasets/`<br>`[datasetId]/documents/route.ts` | Generates structured IDs for the full ERD chain (batch, N documents, workflow status, collaborators) using ERD naming conventions |
-| `pad(n, len)`                             | Same file                                                   | Zero-pads a number to a given length (buat pn biar bisa convert dari, e.g., 1878 jadi 001878)                                     |
-| `mask(s)`                                 | `src/app/api/debug/route.ts`                                | Masks a string for safe display: first 12 + last 4 chars with total length (buat masking API Key for debug purposes)              |
-
-### Client-side
-
-| Function                   | File (from my demo project, can be ignored) | Description                                                                     |
-| -------------------------- | ------------------------------------------- | ------------------------------------------------------------------------------- |
-| `parseReferences(raw)`     | `src/app/page.tsx:47`                       | Transforms raw RAGFlow reference chunks into clean `Reference[]` objects        |
-| `fetchUsers()`             | `src/app/page.tsx:69`                       | Fetches user list from `GET /api/keys`, auto-selects first user                 |
-| `fetchSessions()`          | `src/app/page.tsx:78`                       | Fetches sessions from `GET /api/sessions?userId=...`                            |
-| `createSession()`          | `src/app/page.tsx:129`                      | Creates session via `POST /api/sessions`, sets as active                        |
-| `deleteSession(sessionId)` | `src/app/page.tsx:147`                      | Deletes session via `DELETE /api/sessions`                                      |
-| `sendMessage(e)`           | `src/app/page.tsx:160`                      | Sends message via `POST /api/completions`, parses response + references         |
-| `fetchUsers()`             | `src/app/admin/page.tsx:18`                 | Fetches user list for admin table                                               |
-| `createUser(e)`            | `src/app/admin/page.tsx:30`                 | Creates user with name + personalNumber + role                                  |
-| `deleteUser(id)`           | `src/app/admin/page.tsx:44`                 | Deletes user by id                                                              |
-| `toggleCollaborator(pn)`   | `src/app/documents/page.tsx:72`             | Toggles a personal number in the collaborator set                               |
-| `upload(e)`                | `src/app/documents/page.tsx:79`             | Builds FormData with ERD fields and uploads batch of documents (multiple files) |
-
+| Function | File | Description |
+|---|---|---|
+| `new_id(prefix)` | `app/ids.py` | Generates a prefixed ULID string (e.g. `new_id("DB")` → `DB-01KP...`). Prefixes: `UR` user, `DB` batch, `DC` document, `LOG` audit log, `CAT` category, `CONF` confidentiality, `WS` workflow status, `GRP` group |
+| `build_metadata_condition(user)` | `app/services/ragflow_filter.py` | Returns a RAGFlow `metadata_condition` dict for the caller, or `None` for R-AD (sees everything). Encodes clearance + collaborator + group rules as OR conditions |
+| `post_filter_chunks(chunks, user)` | `app/services/ragflow_filter.py` | Second-pass filter applied after RAGFlow returns — guards against the RAGFlow bug #12865 metadata leak by re-checking each chunk's `meta_fields` against the caller's clearance/groups |
+| `normalize_sources(chunks)` | `app/services/ragflow_filter.py` | Transforms raw RAGFlow chunk dicts into clean `source` objects (document_id, document_name, page, box, similarity, snippet) |
+| `create_draft(session, maker, ...)` | `app/services/ingest_service.py` | Creates a `document_batch` + N `document` rows in DRAFT state; saves files to `data/uploads/`; does NOT call RAGFlow |
+| `replace_document_file(session, document, ...)` | `app/services/ingest_service.py` | Overwrites the stored file bytes and bumps `version`; if batch is APPROVED also re-pushes to RAGFlow |
+| `build_meta_fields(session, batch, document)` | `app/services/ingest_service.py` | Returns the `meta_fields` dict sent to RAGFlow: `{ confidentiality, collaborators, groups, document_id, batch_id }` |
+| `push_document(session, batch, document, ragflow)` | `app/services/ingest_service.py` | Uploads one document to RAGFlow, sets metadata, triggers parse, and writes back `ragflow_document_id` |
+| `delete_document_from_ragflow(session, document, ragflow)` | `app/services/ingest_service.py` | Calls RAGFlow delete, nulls `ragflow_document_id`. Returns `True` if removed, `False` if the field was already null |
+| `submit / check / approve / reject` | `app/services/workflow_service.py` | FSM transition functions; each validates the current state and actor role before writing the new `workflow_status_id` |
+| `health_snapshot(session, ragflow)` | `app/services/health_service.py` | Pings RAGFlow and aggregates last-15-min metrics from `audit_log` into a single dict |
+| `log_event(session, ...)` | `app/services/audit_service.py` | Inserts one `audit_log` row; called on every `/api/ai/chat` request |
 
 ---
 
-## Internal APIs (Next.js Route Handlers)
+## Authentication
 
-### Users
+All API routes require the `x-personal-number` header. The middleware (`app/middleware/auth.py`) resolves it to a `User` row and rejects inactive users.
 
-#### `GET /api/keys`
-
-List all users.
-
-- **Response:** `UserRecord[]` — each has `id`, `name`, `personalNumber`, `role`, `createdAt`
-
-#### `POST /api/keys`
-
-Create a user.
-
-- **Body:** `{ "name": string, "personalNumber": string, "role"?: "user" | "superuser" }`
-- **Validation:** name + personalNumber required (400), role must be valid (400), personalNumber must be unique (409)
-- **Response (201):** `UserRecord`
-
-#### `DELETE /api/keys`
-
-Delete a user.
-
-- **Body:** `{ "id": string }`
-- **Response:** `{ "ok": true }`
+| Scenario | Response |
+|---|---|
+| Header absent | `401 AUTH` — "Missing x-personal-number header" |
+| Unknown personal number | `401 AUTH` — "Unknown user" |
+| `is_active = false` | `401 AUTH` — "Unknown user" |
+| Role not in allowed set | `403 AI-E03` — "Role not permitted for this endpoint" |
 
 ---
 
-### Lookup Data
+## Error Codes
 
-#### `GET /api/confidentiality`
+All errors return a JSON envelope:
 
-List all confidentiality levels.
+```json
+{
+  "code": "ERROR_CODE",
+  "message": "Human-readable description",
+  "detail": { ... }
+}
+```
 
-- **Response:** `Confidentiality[]` — each has `id`, `name`, `description`, `actionAt`, `actionBy`
-
-#### `GET /api/categories`
-
-List all document categories.
-
-- **Response:** `DocumentCategory[]` — each has `id`, `name`, `description`, `actionAt`, `actionBy`
-
-#### `GET /api/datasets`
-
-Returns the configured default dataset ID.
-
-- **Response:** `{ "datasetId": string }`
+| Code         | HTTP | Class                     | Meaning                                                                                                                                            |
+| ------------ | ---- | ------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `AUTH`       | 401  | `AuthError`               | Missing or unknown `x-personal-number` header                                                                                                      |
+| `VALIDATION` | 422  | `ValidationError`         | Request body or path parameter failed validation                                                                                                   |
+| `AI-E01`     | 200  | —                         | Warning only (not an error response): retrieval returned no context, or max similarity < 0.3. Returned in the `warning` field of the chat response |
+| `AI-E02`     | 409  | `WorkflowError`           | Invalid FSM transition (e.g. trying to submit a batch that is already APPROVED)                                                                    |
+| `AI-E03`     | 403  | `AccessError`             | Role or clearance insufficient for the endpoint                                                                                                    |
+| `AI-E04`     | 502  | `RagflowUploadError`      | RAGFlow rejected the document upload (OCR / parse failure)                                                                                         |
+| `AI-E05`     | 502  | `RagflowUnavailableError` | RAGFlow unreachable, returned 5xx, or timed out                                                                                                    |
+| `INTERNAL`   | 500  | `RicsaError`              | Unhandled server exception                                                                                                                         |
 
 ---
 
-### Documents
+## Internal APIs
 
-#### `POST /api/datasets/:datasetId/documents`
+Base URL: `http://localhost:8000` (dev) — set via `{{baseUrl}}` in Postman.
 
-Upload one or more documents to RAGFlow as a batch and create the full ERD chain in the local database.
+Authentication: every request must include `x-personal-number: <personal_number>` header.
 
-- **Content-Type:** `multipart/form-data`
-- **Path params:** `datasetId` — RAGFlow dataset ID
-- **Form fields:**
+---
+
+### Tag: ai
+
+---
+
+#### `POST /api/ai/ingest`
+
+Upload one or more files as a new document batch in DRAFT state. No RAGFlow interaction at this stage — documents are stored locally until the batch is approved.
+
+**Required role:** `R-MK`
+
+**Content-Type:** `multipart/form-data`
+
+**Form fields:**
 
 | Field | Type | Required | Description |
 |---|---|---|---|
-| `file` | File (multiple) | Yes | One or more document files (repeat the `file` field per file) |
-| `personalNumber` | string | Yes | Uploader's personal number |
-| `confidentialityId` | string | Yes | FK to `confidentiality.id` |
-| `documentCategoryId` | string | Yes | FK to `document_category.id` |
-| `title` | string | Yes | Batch title |
-| `collaboratorPNs` | string | No | JSON array of personal numbers, e.g. `'["001726","001727"]'` |
+| `files` | File (repeat per file) | Yes | One or more document files |
+| `title` | string (1–240 chars) | Yes | Batch display title |
+| `category_code` | string | Yes | Must match a seeded `document_category.code` — e.g. `LHA`, `KKA`, `DPA` |
+| `confidentiality_code` | `U` or `R` | Yes | Confidentiality classification |
+| `group_codes` | string (repeat per group) | No | Access group codes — e.g. `SKAI`, `EDM` |
+| `collaborator_personal_numbers` | string (repeat per user) | No | Personal numbers of collaborators who can access Rahasia documents |
 
-- **Flow:**
-  1. Upload each file to RAGFlow `POST /api/v1/datasets/{datasetId}/documents` (sequentially)
-  2. Set metadata on each: `PUT /api/v1/datasets/{datasetId}/documents/{docId}` with `meta_fields: { confidentiality: "<name>", collaborators: ",pn1,pn2," }`
-  3. Create one `document_batch` row
-  4. Create one `document` row per file (all linked to the same batch, category, confidentiality)
-  5. Create one `document_batch_application_workflow_status` row
-  6. Create `document_batch_collaborator` rows (uploader always auto-included)
+**Response (201 Created):**
+```json
+{
+  "batch_id": "DB-01KPZCAB1DDEXE3NHH0GHSXJSB",
+  "document_ids": [
+    "DC-01KPZCAB1KBQSA6BX5EE21004Q",
+    "DC-01KPZCAB1M7WB7DX7PHTRVEMEJ"
+  ],
+  "workflow_status": "DRAFT",
+  "message": "Upload stored. Submit for review to progress workflow."
+}
+```
 
-- **RBAC behavior:**
-  - Collaborators are **always** stored (uploader auto-included) regardless of confidentiality level, for audit trail purposes
-  - Confidentiality `U` (Umum): document accessible to all via `metadata_condition` — collaborators recorded but not restrictive
-  - Confidentiality `R`: only collaborators + superusers can access via `metadata_condition` filter
+**Error responses:**
 
-- **Response (201):**
-  ```json
-  {
-    "batch": {...},
-    "documents": [...],
-    "workflowStatus": {...},
-    "collaborators": ["001726", "001727"],
-    "ragflowDocuments": [{ "id": "...", "name": "...", "fileIndex": 0 }]
-  }
-  ```
-  `collaborators` is a flat list of personal number strings.
+| Status | Code         | Condition                                                                     |
+| ------ | ------------ | ----------------------------------------------------------------------------- |
+| 401    | `AUTH`       | Missing or unknown `x-personal-number`                                        |
+| 403    | `AI-E03`     | Caller is not `R-MK`                                                          |
+| 422    | `VALIDATION` | No files provided, unknown `category_code`, or unknown `confidentiality_code` |
 
 ---
 
-### Sessions
+#### `PUT /api/ai/ingest/{batch_id}/documents/{document_id}`
 
-#### `GET /api/sessions?userId=:userId`
+Replace the file bytes of one document in a batch. Only the original batch maker may call this.
 
-List RAGFlow chat sessions for a user.
+If the batch is already `APPROVED`, the old RAGFlow entry is deleted and the new file is immediately re-uploaded and re-parsed. If the batch is not yet APPROVED, only the local file is overwritten.
 
-- **Query:** `userId` (required) — internal user ID (cuid). The backend resolves `user.personalNumber` and passes it as RAGFlow's `user_id`.
-- **Response:** RAGFlow response proxied: `{ "code": 0, "data": Session[] }`
+**Required role:** `R-MK` (and must be the original maker of the batch)
+
+**Content-Type:** `multipart/form-data`
+
+**Form fields:**
+
+| Field | Type | Required | Description |
+|---|---|---|---|
+| `file` | File | Yes | Replacement file |
+
+**Path parameters:**
+
+| Parameter | Description |
+|---|---|
+| `batch_id` | ID of the parent batch (e.g. `DB-01KP...`) |
+| `document_id` | ID of the document to replace (e.g. `DC-01KP...`) |
+
+**Response (200 OK):**
+```json
+{
+  "batch_id": "DB-01KPZCAB1DDEXE3NHH0GHSXJSB",
+  "document_id": "DC-01KPZCAB41743ME01C49JTRRYV",
+  "workflow_status": "APPROVED",
+  "ragflow_document_id": "rf-abc123"
+}
+```
+
+`ragflow_document_id` is `null` if the batch was not APPROVED at the time of replacement.
+
+**Error responses:**
+
+| Status | Code | Condition |
+|---|---|---|
+| 401 | `AUTH` | Missing or unknown `x-personal-number` |
+| 403 | `AI-E03` | Caller is not `R-MK` or is not the original maker |
+| 404 | `VALIDATION` | `batch_id` or `document_id` not found |
+| 502 | `AI-E05` | RAGFlow unreachable (only triggered when batch is APPROVED) |
+
+---
+
+#### `PATCH /api/ai/ingest/{batch_id}/meta`
+
+Update the access metadata (confidentiality, groups, collaborators) on any batch. Re-sends the updated `meta_fields` to RAGFlow for every document that already has a `ragflow_document_id`. RAGFlow overwrites — it does not merge.
+
+**Required role:** `R-AD`
+
+**Content-Type:** `application/json`
+
+**Request body (all fields optional — omit to leave unchanged):**
+```json
+{
+  "confidentiality_code": "R",
+  "group_codes": ["SKAI", "EDM"],
+  "collaborator_personal_numbers": ["100001", "200001"]
+}
+```
+
+**Path parameters:**
+
+| Parameter | Description |
+|---|---|
+| `batch_id` | ID of the target batch |
+
+**Response (200 OK):**
+```json
+{
+  "batch_id": "DB-01KPZCAB1DDEXE3NHH0GHSXJSB",
+  "reindexed_count": 3
+}
+```
+
+`reindexed_count` is the number of documents successfully updated in RAGFlow. `0` if the batch has no APPROVED documents or RAGFlow is unreachable.
+
+**Error responses:**
+
+| Status | Code | Condition |
+|---|---|---|
+| 401 | `AUTH` | Missing or unknown `x-personal-number` |
+| 403 | `AI-E03` | Caller is not `R-AD` |
+| 404 | `VALIDATION` | `batch_id` not found |
+
+---
+
+#### `DELETE /api/ai/ingest/{batch_id}`
+
+Remove every document in the batch from RAGFlow and null each `ragflow_document_id`. Local database records are retained for audit trail.
+
+**Required role:** `R-AD`
+
+**Path parameters:**
+
+| Parameter | Description |
+|---|---|
+| `batch_id` | ID of the target batch |
+
+**Response (200 OK):**
+```json
+{
+  "batch_id": "DB-01KPZCAB1DDEXE3NHH0GHSXJSB",
+  "ragflow_removed_count": 5
+}
+```
+
+`ragflow_removed_count` is the number of documents that had a RAGFlow entry and were successfully removed. Already-null entries are skipped and not counted.
+
+**Error responses:**
+
+| Status | Code | Condition |
+|---|---|---|
+| 401 | `AUTH` | Missing or unknown `x-personal-number` |
+| 403 | `AI-E03` | Caller is not `R-AD` |
+| 404 | `VALIDATION` | `batch_id` not found |
+
+---
+
+#### `DELETE /api/ai/ingest/{batch_id}/documents/{document_id}`
+
+Remove a single document from RAGFlow and null its `ragflow_document_id`. The document row is retained.
+
+**Required role:** `R-AD`
+
+**Path parameters:**
+
+| Parameter | Description |
+|---|---|
+| `batch_id` | ID of the parent batch |
+| `document_id` | ID of the document to remove from RAGFlow |
+
+**Response (200 OK):**
+```json
+{
+  "batch_id": "DB-01KPZCAB1DDEXE3NHH0GHSXJSB",
+  "document_id": "DC-01KPZCAB41743ME01C49JTRRYV",
+  "ragflow_removed": true
+}
+```
+
+`ragflow_removed` is `false` when `ragflow_document_id` was already null (nothing to remove).
+
+**Error responses:**
+
+| Status | Code | Condition |
+|---|---|---|
+| 401 | `AUTH` | Missing or unknown `x-personal-number` |
+| 403 | `AI-E03` | Caller is not `R-AD` |
+| 404 | `VALIDATION` | `batch_id` or `document_id` not found |
+
+---
+
+#### `POST /api/ai/chat`
+
+Send a question to the RAGFlow chat assistant. The backend builds an access-control filter from the caller's role, clearance level, and group memberships before forwarding to RAGFlow. The response chunks are post-filtered again as a guard against the RAGFlow bug #12865 metadata leak.
+
+Every call writes one row to `audit_log`. Questions are stored as `[REDACTED]` if any retrieved document carries `confidentiality = R` (per FR-AI-LOG-02).
+
+**Required role:** Any authenticated user
+
+**Content-Type:** `application/json`
+
+**Request body:**
+
+| Field        | Type    | Required | Description                                                                          |
+| ------------ | ------- | -------- | ------------------------------------------------------------------------------------ |
+| `question`   | string  | Yes      | User's question                                                                      |
+| `session_id` | string  | No       | Existing RAGFlow session ID. If null/omitted, a new session is created automatically |
+| `stream`     | boolean | No       | `false` only (streaming not yet supported)                                           |
+|              |         |          |                                                                                      |
+
+**Response (200 OK):**
+```json
+{
+  "session_id": "sess-abc-123",
+  "answer": "Berdasarkan dokumen yang tersedia...",
+  "sources": [
+    {
+      "document_id": "DC-01KP...",
+      "document_name": "LHA-2024-Q3.pdf",
+      "page": 3,
+      "box": [12, 456, 88, 510],
+      "similarity": 0.87,
+      "snippet": "Temuan material pada kuartal ketiga..."
+    }
+  ],
+  "warning": null
+}
+```
+
+When retrieval returns no results or max similarity is below `0.3`, the answer is the fixed Indonesian message `"Sumber tidak ditemukan..."` and the `warning` field is populated:
+```json
+{
+  "warning": {
+    "code": "AI-E01",
+    "message": "Retrieval returned insufficient context"
+  }
+}
+```
+
+**RBAC filter logic applied to `metadata_condition`:**
+
+| Clearance | Role | Sees |
+|---|---|---|
+| Any | `R-AD` | All documents (no `metadata_condition`) |
+| `false` | Any | Umum (`U`) documents only |
+| `true` | Any | Umum (`U`) OR (Rahasia (`R`) AND is a collaborator OR is in a matching group) |
+
+**Error responses:**
+
+| Status | Code | Condition |
+|---|---|---|
+| 401 | `AUTH` | Missing or unknown `x-personal-number` |
+| 502 | `AI-E05` | RAGFlow unreachable |
+
+---
+
+#### `GET /api/ai/health`
+
+Returns the current operational status of the service along with last-15-minute aggregate metrics from `audit_log` and a live RAGFlow connectivity ping.
+
+Always returns HTTP `200` even when degraded — so dashboards and uptime monitors do not alert on RAGFlow downtime alone.
+
+**Required role:** Any authenticated user
+
+**Response (200 OK — healthy):**
+```json
+{
+  "status": "ok",
+  "ragflow": {
+    "reachable": true,
+    "latency_ms": 42
+  },
+  "metrics_last_15min": {
+    "requests": 128,
+    "errors": 1,
+    "error_rate": 0.0078,
+    "p50_latency_ms": 210,
+    "p95_latency_ms": 980,
+    "retrieval_zero_result_count": 3
+  }
+}
+```
+
+**Response (200 OK — degraded, RAGFlow down):**
+```json
+{
+  "status": "degraded",
+  "ragflow": {
+    "reachable": false,
+    "latency_ms": 3305
+  },
+  "metrics_last_15min": { ... }
+}
+```
+
+---
+
+#### `GET /api/ai/logs`
+
+Paginated view of the `audit_log` table. Rahasia-redacted questions appear as `[REDACTED]`.
+
+**Required role:** `R-AD`
+
+**Query parameters:**
+
+| Parameter | Type | Default | Description |
+|---|---|---|---|
+| `from` | ISO 8601 datetime | — | Filter logs at or after this timestamp |
+| `to` | ISO 8601 datetime | — | Filter logs at or before this timestamp |
+| `user_id` | string | — | Filter by `personal_number` or `user.id` |
+| `error_code` | string | — | Filter by error code (e.g. `AI-E05`) |
+| `page` | int ≥ 1 | `1` | Page number |
+| `size` | int 1–500 | `50` | Results per page |
+
+**Response (200 OK):**
+```json
+{
+  "page": 1,
+  "size": 50,
+  "total": 234,
+  "rows": [
+    {
+      "id": "LOG-01KP...",
+      "timestamp": "2026-04-27T10:00:00",
+      "user": {
+        "id": "UR-000002",
+        "personal_number": "100001",
+        "name": "Budi Maker"
+      },
+      "endpoint": "/api/ai/chat",
+      "method": "POST",
+      "session_id": "sess-abc",
+      "question": "Temuan material pada audit Q3 2024?",
+      "retrieved_doc_ids": ["DC-01KP..."],
+      "access_status": "granted",
+      "latency_ms": 234,
+      "http_status": 200,
+      "error_code": null,
+      "error_detail": null
+    }
+  ]
+}
+```
+
+**Error responses:**
+
+| Status | Code | Condition |
+|---|---|---|
+| 401 | `AUTH` | Missing or unknown `x-personal-number` |
+| 403 | `AI-E03` | Caller is not `R-AD` |
+
+---
+
+### Tag: workflow
+
+---
+
+#### `POST /api/documents/{batch_id}/submit`
+
+Transition a batch from `DRAFT` → `SUBMITTED`. Only the original maker of the batch may submit.
+
+**Required role:** `R-MK`
+
+**Path parameters:**
+
+| Parameter | Description |
+|---|---|
+| `batch_id` | ID of the batch to submit |
+
+**Response (200 OK):**
+```json
+{
+  "batch_id": "DB-01KPZCAB1DDEXE3NHH0GHSXJSB",
+  "workflow_status": "SUBMITTED",
+  "ragflow_submission": null,
+  "rejected_reason": null
+}
+```
+
+**Error responses:**
+
+| Status | Code | Condition |
+|---|---|---|
+| 401 | `AUTH` | Missing or unknown `x-personal-number` |
+| 403 | `AI-E03` | Caller is not `R-MK`, or is not the original maker |
+| 404 | `VALIDATION` | `batch_id` not found |
+| 409 | `AI-E02` | Batch is not in `DRAFT` state |
+
+---
+
+#### `POST /api/documents/{batch_id}/check`
+
+Transition a batch from `SUBMITTED` → `CHECKED`.
+
+**Required role:** `R-CK`
+
+**Path parameters:**
+
+| Parameter | Description |
+|---|---|
+| `batch_id` | ID of the batch to check |
+
+**Response (200 OK):**
+```json
+{
+  "batch_id": "DB-01KPZCAB1DDEXE3NHH0GHSXJSB",
+  "workflow_status": "CHECKED",
+  "ragflow_submission": null,
+  "rejected_reason": null
+}
+```
+
+**Error responses:**
+
+| Status | Code | Condition |
+|---|---|---|
+| 401 | `AUTH` | Missing or unknown `x-personal-number` |
+| 403 | `AI-E03` | Caller is not `R-CK` |
+| 404 | `VALIDATION` | `batch_id` not found |
+| 409 | `AI-E02` | Batch is not in `SUBMITTED` state |
+
+---
+
+#### `POST /api/documents/{batch_id}/sign`
+
+Transition a batch from `CHECKED` → `APPROVED` and queue a background RAGFlow upload. Returns `202 Accepted` immediately. Clients should poll `GET /api/documents/{batch_id}` and watch each document's `ragflow_document_id` fill in as the background task completes.
+
+**Required role:** `R-SG`
+
+**Path parameters:**
+
+| Parameter | Description |
+|---|---|
+| `batch_id` | ID of the batch to approve |
+
+**Response (202 Accepted):**
+```json
+{
+  "batch_id": "DB-01KPZCAB1DDEXE3NHH0GHSXJSB",
+  "workflow_status": "APPROVED",
+  "ragflow_submission": "queued",
+  "rejected_reason": null
+}
+```
+
+**Error responses:**
+
+| Status | Code | Condition |
+|---|---|---|
+| 401 | `AUTH` | Missing or unknown `x-personal-number` |
+| 403 | `AI-E03` | Caller is not `R-SG` |
+| 404 | `VALIDATION` | `batch_id` not found |
+| 409 | `AI-E02` | Batch is not in `CHECKED` state |
+
+---
+
+#### `POST /api/documents/{batch_id}/reject`
+
+Transition a batch to `REJECTED`. Checker can reject from `SUBMITTED`; Signer can reject from `CHECKED`. Rejected batches are never pushed to RAGFlow.
+
+**Required role:** `R-CK` or `R-SG`
+
+**Path parameters:**
+
+| Parameter | Description |
+|---|---|
+| `batch_id` | ID of the batch to reject |
+
+**Content-Type:** `application/json`
+
+**Request body:**
+```json
+{
+  "reason": "Dokumen tidak lengkap, perlu revisi lampiran"
+}
+```
+
+**Response (200 OK):**
+```json
+{
+  "batch_id": "DB-01KPZCAB1DDEXE3NHH0GHSXJSB",
+  "workflow_status": "REJECTED",
+  "ragflow_submission": null,
+  "rejected_reason": "Dokumen tidak lengkap, perlu revisi lampiran"
+}
+```
+
+**Error responses:**
+
+| Status | Code | Condition |
+|---|---|---|
+| 401 | `AUTH` | Missing or unknown `x-personal-number` |
+| 403 | `AI-E03` | Caller is not `R-CK` or `R-SG` |
+| 404 | `VALIDATION` | `batch_id` not found |
+| 409 | `AI-E02` | Batch is not in a rejectable state (`SUBMITTED` or `CHECKED`) |
+
+---
+
+#### `GET /api/documents`
+
+Paginated list of document batches, scoped to what the caller can see.
+
+**Visibility rules:**
+- `R-AD`: sees all batches
+- `R-MK`: sees only their own batches
+- `R-CK`, `R-SG`, `R-IA`: sees batches where they are maker, collaborator, or share a group with the batch
+
+**Required role:** Any authenticated user
+
+**Query parameters:**
+
+| Parameter | Type | Description |
+|---|---|---|
+| `status` | WorkflowStatus enum | Filter by workflow status (e.g. `DRAFT`, `APPROVED`) |
+| `maker_id` | string | Filter by maker's user ID (`UR-...`) |
+| `category` | string | Filter by category code (e.g. `LHA`) |
+| `confidentiality` | `U` or `R` | Filter by confidentiality code |
+| `page` | int ≥ 1 | Default `1` |
+| `size` | int 1–200 | Default `50` |
+
+**Response (200 OK):**
+```json
+{
+  "page": 1,
+  "size": 50,
+  "total": 3,
+  "rows": [
+    {
+      "id": "DB-01KPZCAB1DDEXE3NHH0GHSXJSB",
+      "title": "pcp-files",
+      "category_code": "LHA",
+      "confidentiality_code": "U",
+      "workflow_status": "CHECKED",
+      "maker_id": "UR-000002",
+      "checker_id": "UR-000004",
+      "signer_id": null,
+      "rejected_reason": null,
+      "created_at": "2026-04-24T09:14:46.189981",
+      "updated_at": "2026-04-24T09:14:46.189999"
+    }
+  ]
+}
+```
+
+---
+
+#### `GET /api/documents/{batch_id}`
+
+Full detail for a single batch, including the document list. Same visibility rules as the list endpoint apply.
+
+**Required role:** Any authenticated user
+
+**Path parameters:**
+
+| Parameter | Description |
+|---|---|
+| `batch_id` | ID of the batch |
+
+**Response (200 OK):**
+```json
+{
+  "id": "DB-01KPZCAB1DDEXE3NHH0GHSXJSB",
+  "title": "pcp-files",
+  "category_code": "LHA",
+  "confidentiality_code": "U",
+  "workflow_status": "CHECKED",
+  "maker_id": "UR-000002",
+  "checker_id": "UR-000004",
+  "signer_id": null,
+  "rejected_reason": null,
+  "created_at": "2026-04-24T09:14:46.189981",
+  "updated_at": "2026-04-24T09:14:46.189999",
+  "groups": ["SKAI"],
+  "collaborators": ["200001"],
+  "documents": [
+    {
+      "id": "DC-01KPZCAB1KBQSA6BX5EE21004Q",
+      "version": "000001",
+      "filename": "LHA-2024-Q3.pdf",
+      "mime_type": "application/pdf",
+      "size_bytes": 1024000,
+      "ragflow_document_id": null,
+      "uploaded_at": "2026-04-24T09:14:46.200000"
+    }
+  ]
+}
+```
+
+**Error responses:**
+
+| Status | Code | Condition |
+|---|---|---|
+| 401 | `AUTH` | Missing or unknown `x-personal-number` |
+| 404 | `VALIDATION` | `batch_id` not found or not visible to caller |
+
+---
+
+### Tag: sessions
+
+---
+
+#### `GET /api/sessions`
+
+List RAGFlow chat sessions belonging to the caller. Sessions whose last activity (`updated_at`, falling back to `created_at`) is older than 90 days are excluded per BRS §14.2.
+
+**Required role:** Any authenticated user
+
+**Response (200 OK):**
+```json
+[
+  {
+    "id": "sess-abc-123",
+    "name": "Audit Q3 2024 consultation",
+    "created_at": "2026-04-01T09:00:00",
+    "updated_at": "2026-04-01T09:15:00"
+  }
+]
+```
+
+**Error responses:**
+
+| Status | Code | Condition |
+|---|---|---|
+| 401 | `AUTH` | Missing or unknown `x-personal-number` |
+| 502 | `AI-E05` | RAGFlow unreachable |
+
+---
 
 #### `POST /api/sessions`
 
-Create a new RAGFlow chat session.
+Create a new RAGFlow chat session scoped to the caller.
 
-- **Body:** `{ "userId": string, "name"?: string }`
-- **Note:** RAGFlow's `user_id` is set to the user's `personalNumber` (not the internal cuid), keeping it consistent with the collaborator metadata.
-- **Response:** `{ "code": 0, "data": { "id": "...", ... } }`
+**Required role:** Any authenticated user
 
-#### `DELETE /api/sessions`
+**Content-Type:** `application/json`
 
-Delete sessions.
+**Request body:**
+```json
+{
+  "name": "Audit Q3 2024"
+}
+```
 
-- **Body:** `{ "userId": string, "sessionIds": string[] }`
-- **Response:** RAGFlow response proxied
+`name` is optional. Omit or pass an empty string to use RAGFlow's default.
 
----
+**Response (201 Created):**
+```json
+{
+  "id": "sess-new-id",
+  "name": "Audit Q3 2024",
+  "created_at": "2026-04-27T10:00:00",
+  "updated_at": "2026-04-27T10:00:00"
+}
+```
 
-### Completions
+**Error responses:**
 
-#### `POST /api/completions`
-
-Send a message to the RAGFlow chat assistant with RBAC filtering.
-
-- **Body:** `{ "userId": string, "sessionId": string, "content": string }`
-
-- **RBAC logic:**
-  - **Superuser:** no `metadata_condition` — sees all documents
-  - **Regular user:** injects `metadata_condition`:
-    ```json
-    {
-      "logic": "or",
-      "conditions": [
-        { "name": "confidentiality", "comparison_operator": "is", "value": "U" },
-        { "name": "collaborators", "comparison_operator": "contains", "value": ",{personalNumber}," }
-      ]
-    }
-    ```
-
-- **Response:** `{ "code": 0, "data": { "answer": "...", "reference": { "chunks": [...] }, "session_id": "..." } }`
+| Status | Code | Condition |
+|---|---|---|
+| 401 | `AUTH` | Missing or unknown `x-personal-number` |
+| 502 | `AI-E05` | RAGFlow unreachable |
 
 ---
 
-### Images
+#### `DELETE /api/sessions/{session_id}`
 
-#### `GET /api/image/:imageId`
+Delete a RAGFlow chat session.
 
-Proxy a RAGFlow citation image.
+**Required role:** Any authenticated user
 
-- **Response:** Image binary with `Content-Type` + `Cache-Control: public, max-age=3600`, or 404
+**Path parameters:**
+
+| Parameter | Description |
+|---|---|
+| `session_id` | ID of the RAGFlow session to delete |
+
+**Response:** `204 No Content`
+
+**Error responses:**
+
+| Status | Code | Condition |
+|---|---|---|
+| 401 | `AUTH` | Missing or unknown `x-personal-number` |
+| 502 | `AI-E05` | RAGFlow unreachable |
 
 ---
 
-### Debug
+### Tag: admin
 
-#### `GET /api/debug`
+---
 
-Diagnostic endpoint — shows config (API key masked) and tests RAGFlow connectivity.
+#### `GET /api/users`
 
-- **Tests:** owned chats, chat access, dataset access
+List all user records.
+
+**Required role:** `R-AD`
+
+**Response (200 OK):**
+```json
+[
+  {
+    "id": "UR-000002",
+    "personal_number": "100001",
+    "name": "Budi Maker",
+    "role": "R-MK",
+    "has_clearance": true,
+    "is_active": true,
+    "group_codes": ["SKAI"],
+    "created_at": "2026-04-23T02:48:57.697075",
+    "updated_at": "2026-04-23T02:48:57.697081"
+  }
+]
+```
+
+---
+
+#### `POST /api/users`
+
+Create a new user.
+
+**Required role:** `R-AD`
+
+**Content-Type:** `application/json`
+
+**Request body:**
+
+| Field | Type | Required | Description |
+|---|---|---|---|
+| `personal_number` | string | Yes | Must be unique. Max 16 characters |
+| `name` | string | Yes | Display name. Max 120 characters |
+| `role` | Role code | Yes | One of `R-IA`, `R-MK`, `R-CK`, `R-SG`, `R-AD` |
+| `has_clearance` | boolean | No | Default `false` |
+| `group_codes` | string[] | No | List of group codes. Unknown codes are ignored |
+
+```json
+{
+  "personal_number": "100042",
+  "name": "Ani",
+  "role": "R-MK",
+  "has_clearance": true,
+  "group_codes": ["SKAI"]
+}
+```
+
+**Response (201 Created):** Full `UserView` object (same shape as list items above).
+
+**Error responses:**
+
+| Status | Code | Condition |
+|---|---|---|
+| 401 | `AUTH` | Missing or unknown `x-personal-number` |
+| 403 | `AI-E03` | Caller is not `R-AD` |
+| 422 | `VALIDATION` | `personal_number` already exists, or invalid `role` |
+
+---
+
+#### `PATCH /api/users/{user_id}`
+
+Update one or more attributes of a user. All fields are optional; omitted fields are unchanged.
+
+**Required role:** `R-AD`
+
+**Path parameters:**
+
+| Parameter | Description |
+|---|---|
+| `user_id` | Internal user ID (format: `UR-...`) |
+
+**Content-Type:** `application/json`
+
+**Request body (all optional):**
+```json
+{
+  "name": "Ani Updated",
+  "role": "R-CK",
+  "has_clearance": true,
+  "group_codes": ["SKAI", "EDM"],
+  "is_active": false
+}
+```
+
+**Response (200 OK):** Updated `UserView` object.
+
+**Error responses:**
+
+| Status | Code | Condition |
+|---|---|---|
+| 401 | `AUTH` | Missing or unknown `x-personal-number` |
+| 403 | `AI-E03` | Caller is not `R-AD` |
+| 422 | `VALIDATION` | `user_id` not found |
+
+---
+
+#### `DELETE /api/users/{user_id}`
+
+Soft-delete a user by setting `is_active = false`. The user record is retained. The user immediately loses the ability to authenticate (the auth middleware rejects inactive users).
+
+**Required role:** `R-AD`
+
+**Path parameters:**
+
+| Parameter | Description |
+|---|---|
+| `user_id` | Internal user ID (format: `UR-...`) |
+
+**Response (200 OK):** `UserView` object with `is_active: false`.
+
+**Error responses:**
+
+| Status | Code | Condition |
+|---|---|---|
+| 401 | `AUTH` | Missing or unknown `x-personal-number` |
+| 403 | `AI-E03` | Caller is not `R-AD` |
+| 422 | `VALIDATION` | `user_id` not found |
+
+---
+
+#### `POST /api/admin/cleanup-sessions`
+
+Delete all RAGFlow sessions whose last activity is older than 90 days. Intended to be called by an infrastructure cron at 23:00 WIB. Per-session errors are silently skipped.
+
+**Required role:** `R-AD`
+
+**Response (200 OK):**
+```json
+{
+  "deleted": 5
+}
+```
+
+**Error responses:**
+
+| Status | Code | Condition |
+|---|---|---|
+| 401 | `AUTH` | Missing or unknown `x-personal-number` |
+| 403 | `AI-E03` | Caller is not `R-AD` |
+
+---
+
+### Tag: lookups
+
+All lookup endpoints require any authenticated user and return a flat list. These are read-only reference data seeded at startup.
+
+---
+
+#### `GET /api/lookups/categories`
+
+**Response (200 OK):**
+```json
+[
+  {"code": "LHA", "name": "Laporan Hasil Audit"},
+  {"code": "KKA", "name": "Kertas Kerja Audit"},
+  {"code": "DPA", "name": "Dokumen Pendukung Audit"}
+]
+```
+
+---
+
+#### `GET /api/lookups/confidentiality`
+
+**Response (200 OK):**
+```json
+[
+  {"code": "U", "name": "Umum", "clearance_required": 0},
+  {"code": "R", "name": "Rahasia", "clearance_required": 1}
+]
+```
+
+---
+
+#### `GET /api/lookups/workflow-statuses`
+
+**Response (200 OK):**
+```json
+[
+  {"code": "DRAFT", "name": "Draft"},
+  {"code": "SUBMITTED", "name": "Submitted"},
+  {"code": "CHECKED", "name": "Checked"},
+  {"code": "APPROVED", "name": "Approved"},
+  {"code": "REJECTED", "name": "Rejected"}
+]
+```
+
+---
+
+#### `GET /api/lookups/groups`
+
+**Response (200 OK):**
+```json
+[
+  {"code": "SKAI", "name": "Satuan Kerja Audit Internal"},
+  {"code": "EDM", "name": "Desk EDM"}
+]
+```
+
+---
+
+#### `GET /api/lookups/roles`
+
+**Response (200 OK):**
+```json
+[
+  {"code": "R-IA", "name": "IA User"},
+  {"code": "R-MK", "name": "Maker"},
+  {"code": "R-CK", "name": "Checker"},
+  {"code": "R-SG", "name": "Signer"},
+  {"code": "R-AD", "name": "Access Admin"}
+]
+```
 
 ---
 
@@ -406,24 +1200,19 @@ Diagnostic endpoint — shows config (API key masked) and tests RAGFlow connecti
 
 All calls use header `Authorization: Bearer {RAGFLOW_API_KEY}`.
 
-Base URL: `{RAGFLOW_BASE_URL}` (e.g. `https://ragflow.dev.internal.example.net`)
+Base URL: `{RAGFLOW_BASE_URL}` (e.g. `https://ragflow.internal.bankraya.co.id`)
 
 ---
 
 ### 1. Upload Document
 
-Upload a file to a dataset. Called by `POST /api/datasets/:datasetId/documents`.
+Upload a file to the configured dataset. Called by `ingest_service.push_document` after a batch is APPROVED.
 
 ```bash
-curl -X POST '{RAGFLOW_BASE_URL}/api/v1/datasets/{datasetId}/documents' \
+curl -X POST '{RAGFLOW_BASE_URL}/api/v1/datasets/{RAGFLOW_DATASET_ID}/documents' \
   -H 'Authorization: Bearer {RAGFLOW_API_KEY}' \
   -F 'file=@/path/to/document.pdf'
 ```
-
-**Request:**
-- **Method:** `POST`
-- **Content-Type:** `multipart/form-data`
-- **Body:** `file` — the file to upload
 
 **Response (200):**
 ```json
@@ -431,13 +1220,10 @@ curl -X POST '{RAGFLOW_BASE_URL}/api/v1/datasets/{datasetId}/documents' \
   "code": 0,
   "data": [
     {
-      "id": "abc123def456",
+      "id": "rf-abc123",
       "name": "document.pdf",
       "size": 102400,
-      "type": "pdf",
-      "created_by": "...",
-      "create_time": 1713200000,
-      "update_time": 1713200000
+      "type": "pdf"
     }
   ]
 }
@@ -447,57 +1233,117 @@ curl -X POST '{RAGFLOW_BASE_URL}/api/v1/datasets/{datasetId}/documents' \
 
 ### 2. Update Document Metadata
 
-Set `meta_fields` on an uploaded document. Called after upload by `POST /api/datasets/:datasetId/documents`.
+Set `meta_fields` on an uploaded document. Called immediately after upload and also by `PATCH /api/ai/ingest/{batch_id}/meta`.
 
 ```bash
-curl -X PUT '{RAGFLOW_BASE_URL}/api/v1/datasets/{datasetId}/documents/{documentId}' \
+curl -X PUT '{RAGFLOW_BASE_URL}/api/v1/datasets/{RAGFLOW_DATASET_ID}/documents/{ragflow_document_id}' \
   -H 'Authorization: Bearer {RAGFLOW_API_KEY}' \
   -H 'Content-Type: application/json' \
   -d '{
     "meta_fields": {
       "confidentiality": "R",
-      "collaborators": ",001726,001727,"
+      "collaborators": ",100001,200001,",
+      "groups": ",SKAI,",
+      "document_id": "DC-01KP...",
+      "batch_id": "DB-01KP..."
     }
   }'
 ```
 
-**Request:**
-- **Method:** `PUT`
-- **Content-Type:** `application/json`
-- **Body:**
+**`meta_fields` schema:**
 
-| Field | Type | Description |
+| Field | Format | Description |
 |---|---|---|
-| `meta_fields.confidentiality` | `string` | `"U"` (Umum/Public) or `"R"` (Rahasia) |
-| `meta_fields.collaborators` | `string` | Comma-delimited personal numbers with leading/trailing commas: `",pn1,pn2,"`. The wrapping commas prevent partial substring collisions when using `contains` matching. |
+| `confidentiality` | `"U"` or `"R"` | Confidentiality code |
+| `collaborators` | `",pn1,pn2,"` | Comma-delimited personal numbers with leading/trailing commas. The wrapping commas prevent partial substring collisions when RAGFlow evaluates `contains` conditions |
+| `groups` | `",SKAI,EDM,"` | Comma-delimited group codes, same wrapping convention |
+| `document_id` | `"DC-01KP..."` | Local document ID for reverse lookup from chat sources |
+| `batch_id` | `"DB-01KP..."` | Local batch ID for grouping |
+
+**Response (200):**
+```json
+{"code": 0}
+```
+
+---
+
+### 3. Parse Documents
+
+Trigger OCR/chunking for one or more uploaded documents. Called by `ingest_service.push_document` after metadata is set.
+
+```bash
+curl -X POST '{RAGFLOW_BASE_URL}/api/v1/datasets/{RAGFLOW_DATASET_ID}/chunks' \
+  -H 'Authorization: Bearer {RAGFLOW_API_KEY}' \
+  -H 'Content-Type: application/json' \
+  -d '{"document_ids": ["rf-abc123"]}'
+```
+
+**Response (200):**
+```json
+{"code": 0}
+```
+
+---
+
+### 4. Delete Document
+
+Remove a document from RAGFlow. Called by `DELETE /api/ai/ingest/...` endpoints.
+
+```bash
+curl -X DELETE '{RAGFLOW_BASE_URL}/api/v1/datasets/{RAGFLOW_DATASET_ID}/documents' \
+  -H 'Authorization: Bearer {RAGFLOW_API_KEY}' \
+  -H 'Content-Type: application/json' \
+  -d '{"ids": ["rf-abc123"]}'
+```
+
+**Response (200):**
+```json
+{"code": 0}
+```
+
+---
+
+### 5. Create Session
+
+Create a new chat session scoped to a user. Called by `POST /api/sessions`.
+
+```bash
+curl -X POST '{RAGFLOW_BASE_URL}/api/v1/chats/{RAGFLOW_CHAT_ID}/sessions' \
+  -H 'Authorization: Bearer {RAGFLOW_API_KEY}' \
+  -H 'Content-Type: application/json' \
+  -d '{
+    "name": "Audit Q3 2024",
+    "user_id": "100001"
+  }'
+```
+
+`user_id` is set to the caller's `personal_number` (not the internal `UR-...` id).
 
 **Response (200):**
 ```json
 {
-  "code": 0
+  "code": 0,
+  "data": {
+    "id": "sess-new-id",
+    "name": "Audit Q3 2024",
+    "user_id": "100001",
+    "chat_id": "...",
+    "create_time": 1713200000,
+    "update_time": 1713200000
+  }
 }
 ```
 
 ---
 
-### 3. List Sessions
+### 6. List Sessions
 
-List chat sessions for a user. Called by `GET /api/sessions` and `GET /api/debug`.
+List sessions for a user. Called by `GET /api/sessions`.
 
 ```bash
-curl -X GET '{RAGFLOW_BASE_URL}/api/v1/chats/{chatId}/sessions?page=1&page_size=100&user_id={personalNumber}' \
+curl -X GET '{RAGFLOW_BASE_URL}/api/v1/chats/{RAGFLOW_CHAT_ID}/sessions?page=1&page_size=100&user_id={personal_number}' \
   -H 'Authorization: Bearer {RAGFLOW_API_KEY}'
 ```
-
-**Request:**
-- **Method:** `GET`
-- **Query params:**
-
-| Param | Type | Description |
-|---|---|---|
-| `page` | `int` | Page number (1-based) |
-| `page_size` | `int` | Results per page |
-| `user_id` | `string` | User's `personalNumber` — scopes sessions to this user |
 
 **Response (200):**
 ```json
@@ -505,11 +1351,9 @@ curl -X GET '{RAGFLOW_BASE_URL}/api/v1/chats/{chatId}/sessions?page=1&page_size=
   "code": 0,
   "data": [
     {
-      "id": "session-id-here",
-      "name": "New Session",
-      "messages": [...],
-      "chat_id": "...",
-      "user_id": "001726",
+      "id": "sess-abc-123",
+      "name": "Audit Q3 2024",
+      "user_id": "100001",
       "create_time": 1713200000,
       "update_time": 1713200000
     }
@@ -519,132 +1363,64 @@ curl -X GET '{RAGFLOW_BASE_URL}/api/v1/chats/{chatId}/sessions?page=1&page_size=
 
 ---
 
-### 4. Create Session
+### 7. Delete Sessions
 
-Create a new chat session. Called by `POST /api/sessions`.
+Delete one or more sessions. Called by `DELETE /api/sessions/{session_id}` and `POST /api/admin/cleanup-sessions`.
 
 ```bash
-curl -X POST '{RAGFLOW_BASE_URL}/api/v1/chats/{chatId}/sessions' \
+curl -X DELETE '{RAGFLOW_BASE_URL}/api/v1/chats/{RAGFLOW_CHAT_ID}/sessions' \
   -H 'Authorization: Bearer {RAGFLOW_API_KEY}' \
   -H 'Content-Type: application/json' \
-  -d '{
-    "name": "New Session",
-    "user_id": "001726"
-  }'
+  -d '{"ids": ["sess-abc-123"]}'
 ```
-
-**Request:**
-- **Method:** `POST`
-- **Content-Type:** `application/json`
-- **Body:**
-
-| Field | Type | Required | Description |
-|---|---|---|---|
-| `name` | `string` | No | Session display name (defaults to `"New Session"`) |
-| `user_id` | `string` | Yes | User's `personalNumber` — ties this session to a specific user |
 
 **Response (200):**
 ```json
-{
-  "code": 0,
-  "data": {
-    "id": "new-session-id",
-    "name": "New Session",
-    "messages": [
-      { "role": "assistant", "content": "Hi! ..." }
-    ],
-    "chat_id": "...",
-    "user_id": "001726",
-    "create_time": 1713200000,
-    "update_time": 1713200000
-  }
-}
+{"code": 0}
 ```
 
 ---
 
-### 5. Delete Sessions
+### 8. Chat Completion
 
-Delete one or more sessions by ID. Called by `DELETE /api/sessions`.
+Send a message to the chat assistant with optional RBAC filtering. Called by `POST /api/ai/chat`.
 
 ```bash
-curl -X DELETE '{RAGFLOW_BASE_URL}/api/v1/chats/{chatId}/sessions' \
+# Non-admin user (with metadata_condition)
+curl -X POST '{RAGFLOW_BASE_URL}/api/v1/chats/{RAGFLOW_CHAT_ID}/completions' \
   -H 'Authorization: Bearer {RAGFLOW_API_KEY}' \
   -H 'Content-Type: application/json' \
   -d '{
-    "ids": ["session-id-1", "session-id-2"]
-  }'
-```
-
-**Request:**
-- **Method:** `DELETE`
-- **Content-Type:** `application/json`
-- **Body:**
-
-| Field | Type | Description |
-|---|---|---|
-| `ids` | `string[]` | Array of session IDs to delete |
-
-**Response (200):**
-```json
-{
-  "code": 0
-}
-```
-
----
-
-### 6. Chat Completion
-
-Send a message to the chat assistant with optional RBAC filtering. Called by `POST /api/completions`.
-
-```bash
-# Regular user (with RBAC metadata_condition)
-curl -X POST '{RAGFLOW_BASE_URL}/api/v1/chats/{chatId}/completions' \
-  -H 'Authorization: Bearer {RAGFLOW_API_KEY}' \
-  -H 'Content-Type: application/json' \
-  -d '{
-    "question": "Apa hasil audit cabang Menara Brilian?",
-    "session_id": "existing-session-id",
+    "question": "Temuan material pada audit Q3 2024?",
+    "session_id": "sess-abc-123",
     "stream": false,
     "metadata_condition": {
       "logic": "or",
       "conditions": [
-        { "name": "confidentiality", "comparison_operator": "is", "value": "U" },
-        { "name": "collaborators", "comparison_operator": "contains", "value": ",001726," }
+        {"name": "confidentiality", "comparison_operator": "is", "value": "U"},
+        {"name": "collaborators", "comparison_operator": "contains", "value": ",100001,"},
+        {"name": "groups", "comparison_operator": "contains", "value": ",SKAI,"}
       ]
     }
   }'
 
-# Superuser (no metadata_condition — sees all documents)
-curl -X POST '{RAGFLOW_BASE_URL}/api/v1/chats/{chatId}/completions' \
+# R-AD (no metadata_condition — sees everything)
+curl -X POST '{RAGFLOW_BASE_URL}/api/v1/chats/{RAGFLOW_CHAT_ID}/completions' \
   -H 'Authorization: Bearer {RAGFLOW_API_KEY}' \
   -H 'Content-Type: application/json' \
   -d '{
-    "question": "Apa hasil audit cabang Menara Brilian?",
-    "session_id": "existing-session-id",
+    "question": "Temuan material pada audit Q3 2024?",
+    "session_id": "sess-abc-123",
     "stream": false
   }'
 ```
-
-**Request:**
-- **Method:** `POST`
-- **Content-Type:** `application/json`
-- **Body:**
-
-| Field | Type | Required | Description |
-|---|---|---|---|
-| `question` | `string` | Yes | The user's message |
-| `session_id` | `string` | Yes | Session ID for stateful conversation |
-| `stream` | `boolean` | No | `false` for single JSON response (default in this app) |
-| `metadata_condition` | `object` | No | RBAC filter (omitted for superusers) |
 
 **`metadata_condition` structure:**
 ```json
 {
   "logic": "or",
   "conditions": [
-    { "name": "<meta_field_name>", "comparison_operator": "<op>", "value": "<val>" }
+    {"name": "<meta_field_name>", "comparison_operator": "<op>", "value": "<val>"}
   ]
 }
 ```
@@ -662,104 +1438,40 @@ Supported `comparison_operator` values: `is`, `not is`, `contains`, `not contain
         {
           "id": "chunk-id",
           "content": "...",
-          "document_id": "...",
-          "document_name": "LHA_Menara_Brilian.pdf",
-          "image_id": "optional-image-id",
-          "positions": [...]
+          "document_id": "rf-abc123",
+          "document_name": "LHA-2024-Q3.pdf",
+          "meta_fields": {
+            "confidentiality": "U",
+            "collaborators": ",100001,200001,",
+            "groups": ",SKAI,",
+            "document_id": "DC-01KP...",
+            "batch_id": "DB-01KP..."
+          },
+          "positions": [[3, 12, 456, 88, 510]],
+          "similarity": 0.87
         }
       ]
     },
-    "session_id": "existing-session-id"
+    "session_id": "sess-abc-123"
   }
 }
 ```
 
-> **Known issue:** RAGFlow bug [#12865](https://github.com/infiniflow/ragflow/issues/12865) — `metadata_condition` on chat assistants may leak non-matching documents. Still open as of v0.24.0. If smoke testing reveals leaked docs, fallback plan: use `/api/v1/retrieval` + separate LLM call.
+> **Known issue:** RAGFlow bug [#12865](https://github.com/infiniflow/ragflow/issues/12865) — `metadata_condition` on chat assistants may leak non-matching documents. RICSA guards against this with `post_filter_chunks()` applied after every completion call.
 
 ---
 
-### 7. Fetch Citation Image
+### 9. Fetch Citation Image
 
-Proxy a document citation image. Called by `GET /api/image/:imageId`.
-
-> **Note:** This endpoint uses the `/v1/` prefix, NOT `/api/v1/`.
+Proxy a document chunk image. Note: uses `/v1/` prefix, not `/api/v1/`.
 
 ```bash
 curl -X GET '{RAGFLOW_BASE_URL}/v1/document/image/{imageId}' \
   -H 'Authorization: Bearer {RAGFLOW_API_KEY}'
 ```
 
-**Request:**
-- **Method:** `GET`
-- **No body.**
-
 **Response (200):**
-- **Content-Type:** `image/png` (or other image MIME type)
+- **Content-Type:** `image/png` (or relevant image MIME type)
 - **Body:** Raw image binary
 
-**Error behavior:** RAGFlow may return `200` with `Content-Type: application/json` when the image doesn't exist. The proxy checks for this and returns `404`.
-
----
-
-### 8. List Owned Chat Assistants (Debug)
-
-List all chat assistants owned by the API key. Called by `GET /api/debug`.
-
-```bash
-curl -X GET '{RAGFLOW_BASE_URL}/api/v1/chats?page=1&page_size=100' \
-  -H 'Authorization: Bearer {RAGFLOW_API_KEY}'
-```
-
-**Request:**
-- **Method:** `GET`
-- **Query params:** `page`, `page_size`
-
-**Response (200):**
-```json
-{
-  "code": 0,
-  "data": [
-    {
-      "id": "a9c38a7c394111f197ce2bd595e42f2e",
-      "name": "RICSA Assistant",
-      "description": "...",
-      "create_time": 1713200000,
-      "update_time": 1713200000
-    }
-  ]
-}
-```
-
----
-
-### 9. List Dataset Documents (Debug)
-
-List documents in a dataset. Called by `GET /api/debug`.
-
-```bash
-curl -X GET '{RAGFLOW_BASE_URL}/api/v1/datasets/{datasetId}/documents?page=1&page_size=1' \
-  -H 'Authorization: Bearer {RAGFLOW_API_KEY}'
-```
-
-**Request:**
-- **Method:** `GET`
-- **Query params:** `page`, `page_size`
-
-**Response (200):**
-```json
-{
-  "code": 0,
-  "data": [
-    {
-      "id": "doc-id",
-      "name": "document.pdf",
-      "size": 102400,
-      "type": "pdf",
-      "meta_fields": {
-        "confidentiality": "R",
-        "collaborators": ",001726,001727,"
-      }
-    }
-  ]
-}
-```
+**Error behavior:** RAGFlow may return `200 application/json` when the image does not exist. The proxy detects this and returns `404`.

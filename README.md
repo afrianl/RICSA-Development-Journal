@@ -113,3 +113,10 @@
 		- Deletes batch from RAGFlow
 	- POST `/api/ai/ingest` with multiple files -> bugged
 		- fixed it
+
+## 2026-04-27
+- Found that Swagger is unreliable for deeper API Testing
+- Exported all test cases into a Postman collection
+- Tested everything via Claude Code
+- Updated [the API Reference file](API_REFERENCE.md) based on the test results
+- Created [the RAGFlow API Reference file](RAGFLOW_API_REFERENCE.md) from the updated API Reference file, containing only the raw RAGFlow APIs
