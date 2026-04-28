@@ -1,4 +1,4 @@
-# RAGFlow Outgoing API Reference (V2)
+# RAGFlow Outgoing API Reference
 
 This document is the canonical reference for every RAGFlow HTTP call the RICSA backend makes. Every request and response shown here was captured live against the dev RAGFlow instance (`https://ragflow.dev.internal.rayain.net`). Where the V1 reference and the actual API disagree, this document follows the **actual API** — see "Discrepancies vs. V1" at the bottom for details.
 
