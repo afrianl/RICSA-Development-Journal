@@ -307,6 +307,27 @@ curl -X GET '{RAGFLOW_BASE_URL}/api/v1/chats/{RAGFLOW_CHAT_ID}/sessions?page=1&p
   -H 'Authorization: Bearer {RAGFLOW_API_KEY}'
 ```
 
+**Query params:**
+
+| Name | Type | Description |
+|---|---|---|
+| `page` | integer | Page number (default `1`). |
+| `page_size` | integer | Number of sessions per page (default `100`). |
+| `id` | string | Filter by a specific session ID to fetch messages from that session. |
+| `user_id` | string | Filter by user personal number to fetch messages for that specific user. |
+
+Examples:
+
+```bash
+# Filter by specific session ID
+curl -X GET '{RAGFLOW_BASE_URL}/api/v1/chats/{RAGFLOW_CHAT_ID}/sessions?id=6b61f10042b111f1b31643e9187f31a0' \
+  -H 'Authorization: Bearer {RAGFLOW_API_KEY}'
+
+# Filter by user personal number
+curl -X GET '{RAGFLOW_BASE_URL}/api/v1/chats/{RAGFLOW_CHAT_ID}/sessions?user_id=001726' \
+  -H 'Authorization: Bearer {RAGFLOW_API_KEY}'
+```
+
 **Success (HTTP 200):**
 ```json
 {
