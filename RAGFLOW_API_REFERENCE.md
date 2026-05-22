@@ -313,6 +313,8 @@ curl -X GET '{RAGFLOW_BASE_URL}/api/v1/chats/{RAGFLOW_CHAT_ID}/sessions?page=1&p
 |---|---|---|
 | `page` | integer | Page number (default `1`). |
 | `page_size` | integer | Number of sessions per page (default `100`). |
+| `orderby` | string | Filter parameter. Field used to sort sessions: `create_time` (default) or `update_time`. |
+| `desc` | boolean | Filter parameter. Sort order direction (`true` for descending, `false` for ascending). |
 | `id` | string | Filter by a specific session ID to fetch messages from that session. |
 | `user_id` | string | Filter by user personal number to fetch messages for that specific user. |
 
