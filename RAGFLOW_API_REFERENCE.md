@@ -261,7 +261,10 @@ Open a chat session. Called by `chat_service.chat` when no `session_id` is suppl
 curl -X POST '{RAGFLOW_BASE_URL}/api/v1/chats/{RAGFLOW_CHAT_ID}/sessions' \
   -H 'Authorization: Bearer {RAGFLOW_API_KEY}' \
   -H 'Content-Type: application/json' \
-  -d '{"name": "Audit Q3 2024"}'
+  -d '{
+        "name": "Audit Q3 2024",
+        "user_id": "xxxxxxx"
+      }'
 ```
 
 `name` is optional — when omitted, RAGFlow auto-generates one (e.g. `"New session"`). The backend currently sends `{}`; it does not pass `user_id` (V1 doc was wrong about this — `user_id` comes back as `""` on the response).
