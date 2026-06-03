@@ -267,7 +267,7 @@ curl -X POST '{RAGFLOW_BASE_URL}/api/v1/chats/{RAGFLOW_CHAT_ID}/sessions' \
       }'
 ```
 
-`name` is optional — when omitted, RAGFlow auto-generates one (e.g. `"New session"`). The backend currently sends `{}`; it does not pass `user_id` (V1 doc was wrong about this — `user_id` comes back as `""` on the response).
+`name` is optional — when omitted, RAGFlow auto-generates one (e.g. `"New session"`).
 
 **Success (HTTP 200):**
 ```json
